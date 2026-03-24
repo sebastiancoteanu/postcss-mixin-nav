@@ -84,7 +84,7 @@ async function getIndex(): Promise<Index> {
 }
 
 // ---------------------------------------------------------------------------
-// Cursor-hit detection
+// Caret position: which @mixin name is under the pointer
 // ---------------------------------------------------------------------------
 
 type MixinHit = { name: string; range: vscode.Range };

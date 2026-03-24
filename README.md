@@ -1,6 +1,6 @@
 # postcss-mixin-nav
 
-A VS Code / Cursor extension that adds **Go to Definition**, **Find References**, and **Hover** for [`postcss-mixins`](https://github.com/postcss/postcss-mixins) — the `@define-mixin` / `@mixin` syntax.
+A VS Code extension that adds **Go to Definition**, **Find References**, and **Hover** for [`postcss-mixins`](https://github.com/postcss/postcss-mixins) — the `@define-mixin` / `@mixin` syntax.
 
 ## Features
 
@@ -22,7 +22,7 @@ Supports:
 ### Option A — run without installing (dev host)
 
 ```bash
-# Open the extension folder in Cursor / VS Code
+# Open the extension folder in VS Code
 code /path/to/postcss-mixin-nav
 
 # Press F5 → "Run Extension"
@@ -41,7 +41,7 @@ npx @vscode/vsce package --allow-missing-repository
 # → postcss-mixin-nav-0.1.0.vsix
 ```
 
-In Cursor / VS Code: **Extensions panel → ⋯ menu → Install from VSIX…** → pick the `.vsix` file.
+In VS Code: **Extensions panel → ⋯ menu → Install from VSIX…** → pick the `.vsix` file.
 
 ## Configuration
 
@@ -67,5 +67,5 @@ On first use the extension scans the workspace for all `@define-mixin` declarati
 npm install       # install dev dependencies
 npm run compile   # compile TypeScript → out/
 npm run watch     # compile in watch mode
-# then press F5 in VS Code / Cursor to launch Extension Development Host
+# then press F5 to launch Extension Development Host
 ```
