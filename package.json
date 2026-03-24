@@ -6,7 +6,12 @@
   "publisher": "local",
   "engines": { "vscode": "^1.80.0" },
   "categories": ["Other"],
-  "activationEvents": [],
+  "activationEvents": [
+    "onLanguage:css",
+    "onLanguage:postcss",
+    "onLanguage:scss",
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "configuration": {
