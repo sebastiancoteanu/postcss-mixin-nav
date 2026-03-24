@@ -1,0 +1,33 @@
+{
+  "name": "postcss-mixin-nav",
+  "displayName": "PostCSS Mixin Navigator",
+  "description": "Go-to-definition for postcss-mixins (@define-mixin / @mixin)",
+  "version": "0.1.0",
+  "publisher": "local",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "PostCSS Mixin Navigator",
+      "properties": {
+        "postcssMixinNav.fileGlob": {
+          "type": "string",
+          "default": "**/*.{css,pcss,postcss}",
+          "description": "Glob pattern for files to search for @define-mixin definitions"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.0.0"
+  }
+}
