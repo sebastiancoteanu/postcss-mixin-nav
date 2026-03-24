@@ -2,14 +2,21 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// Matches: @define-mixin mixinName  or  @define-mixin mixinName $param1 {
 const DEFINE_RE = /^\s*@define-mixin\s+([\w-]+)/;
-
-// Matches: @mixin mixinName  or  @mixin mixinName arg1, arg2;
-const USE_RE = /\bmixin\s+([\w-]+)/;
+const USE_RE_G = /@mixin\s+([\w-]+)/g;
 
 // ---------------------------------------------------------------------------
-// Index: map of mixin-name -> array of { file, line }
+// Semantic token legend — "type" maps to whatever the active theme uses for
+// class / interface / type names (same as TS component names).
+// ---------------------------------------------------------------------------
+
+const TOKEN_TYPES = ['type'];
+const TOKEN_MODIFIERS: string[] = [];
+const LEGEND = new vscode.SemanticTokensLegend(TOKEN_TYPES, TOKEN_MODIFIERS);
+const TYPE_IDX = 0; // index of 'type' in TOKEN_TYPES
+
+// ---------------------------------------------------------------------------
+// Index
 // ---------------------------------------------------------------------------
 
 type MixinLocation = { file: string; line: number };
@@ -77,49 +84,93 @@ async function getIndex(): Promise<Index> {
 }
 
 // ---------------------------------------------------------------------------
-// Resolve what mixin the cursor is on.
-// Returns { name, range } if the cursor is on a @mixin call, else undefined.
+// Cursor-hit detection
 // ---------------------------------------------------------------------------
 
 type MixinHit = { name: string; range: vscode.Range };
 
-function mixinHitAt(
-  document: vscode.TextDocument,
-  position: vscode.Position
-): MixinHit | undefined {
+function mixinHitAt(document: vscode.TextDocument, position: vscode.Position): MixinHit | undefined {
   const lineText = document.lineAt(position.line).text;
+  if (!lineText.includes('@mixin') || lineText.includes('@define-mixin')) return undefined;
 
-  // Only look at lines that are @mixin calls (not @define-mixin)
-  if (!lineText.includes('@mixin') || lineText.includes('@define-mixin')) {
-    return undefined;
-  }
-
-  // Walk all @mixin occurrences on the line (there's almost always one)
   const re = /@mixin\s+([\w-]+)/g;
   let m: RegExpExecArray | null;
-
   while ((m = re.exec(lineText)) !== null) {
     const name = m[1];
-    // Start of the name token inside the match
     const nameStart = m.index + m[0].indexOf(name);
     const nameEnd = nameStart + name.length;
     const col = position.character;
-
-    // Accept if cursor is anywhere from the '@' to the last char of the name
     if (col >= m.index && col <= nameEnd) {
-      const range = new vscode.Range(
-        new vscode.Position(position.line, nameStart),
-        new vscode.Position(position.line, nameEnd)
-      );
-      return { name, range };
+      return {
+        name,
+        range: new vscode.Range(
+          new vscode.Position(position.line, nameStart),
+          new vscode.Position(position.line, nameEnd)
+        ),
+      };
     }
   }
-
   return undefined;
 }
 
 // ---------------------------------------------------------------------------
-// DefinitionProvider  (F12 and Cmd+Click)
+// Extract the full mixin body by tracking braces
+// ---------------------------------------------------------------------------
+
+function extractMixinBody(lines: string[], startLine: number): string {
+  let depth = 0;
+  let started = false;
+  const result: string[] = [];
+
+  for (let i = startLine; i < lines.length; i++) {
+    result.push(lines[i]);
+    for (const ch of lines[i]) {
+      if (ch === '{') { depth++; started = true; }
+      else if (ch === '}') { depth--; }
+    }
+    if (started && depth === 0) break;
+  }
+  return result.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Semantic tokens — colors mixin names with the theme's "type" colour
+// (same shade used for TS class / interface / component names)
+// ---------------------------------------------------------------------------
+
+class MixinSemanticTokensProvider implements vscode.DocumentSemanticTokensProvider {
+  provideDocumentSemanticTokens(document: vscode.TextDocument): vscode.SemanticTokens {
+    const builder = new vscode.SemanticTokensBuilder(LEGEND);
+
+    for (let i = 0; i < document.lineCount; i++) {
+      const lineText = document.lineAt(i).text;
+
+      // @define-mixin <name>
+      const defMatch = DEFINE_RE.exec(lineText);
+      if (defMatch) {
+        const name = defMatch[1];
+        const nameStart = defMatch[0].length - name.length + (defMatch.index ?? 0);
+        builder.push(i, nameStart, name.length, TYPE_IDX, 0);
+      }
+
+      // @mixin <name> (one or more per line, though usually one)
+      if (lineText.includes('@mixin') && !lineText.includes('@define-mixin')) {
+        const re = /@mixin\s+([\w-]+)/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(lineText)) !== null) {
+          const name = m[1];
+          const nameStart = m.index + m[0].indexOf(name);
+          builder.push(i, nameStart, name.length, TYPE_IDX, 0);
+        }
+      }
+    }
+
+    return builder.build();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Definition provider  (F12 + Cmd+Click)
 // ---------------------------------------------------------------------------
 
 class MixinDefinitionProvider implements vscode.DefinitionProvider {
@@ -135,14 +186,13 @@ class MixinDefinitionProvider implements vscode.DefinitionProvider {
     if (!locs?.length) return undefined;
 
     return locs.map(
-      (loc) =>
-        new vscode.Location(vscode.Uri.file(loc.file), new vscode.Position(loc.line, 0))
+      (loc) => new vscode.Location(vscode.Uri.file(loc.file), new vscode.Position(loc.line, 0))
     );
   }
 }
 
 // ---------------------------------------------------------------------------
-// ReferenceProvider  (Shift+F12 — from @define-mixin → all uses)
+// Reference provider  (Shift+F12 — @define-mixin → all uses)
 // ---------------------------------------------------------------------------
 
 class MixinReferenceProvider implements vscode.ReferenceProvider {
@@ -155,8 +205,7 @@ class MixinReferenceProvider implements vscode.ReferenceProvider {
     if (!defMatch) return undefined;
 
     const name = defMatch[1];
-    const glob = getGlob();
-    const uris = await vscode.workspace.findFiles(glob, '**/node_modules/**');
+    const uris = await vscode.workspace.findFiles(getGlob(), '**/node_modules/**');
     const results: vscode.Location[] = [];
 
     for (const uri of uris) {
@@ -168,19 +217,19 @@ class MixinReferenceProvider implements vscode.ReferenceProvider {
       }
       const lines = content.split('\n');
       for (let i = 0; i < lines.length; i++) {
-        const m = USE_RE.exec(lines[i]);
+        USE_RE_G.lastIndex = 0;
+        const m = USE_RE_G.exec(lines[i]);
         if (m && m[1] === name) {
           results.push(new vscode.Location(uri, new vscode.Position(i, 0)));
         }
       }
     }
-
     return results;
   }
 }
 
 // ---------------------------------------------------------------------------
-// HoverProvider — shows the mixin definition body inline
+// Hover provider — shows full mixin body (scrollable) anchored to name range
 // ---------------------------------------------------------------------------
 
 class MixinHoverProvider implements vscode.HoverProvider {
@@ -204,18 +253,18 @@ class MixinHoverProvider implements vscode.HoverProvider {
         continue;
       }
       const lines = content.split('\n');
-      const snippet = lines.slice(loc.line, loc.line + 10).join('\n');
+      const body = extractMixinBody(lines, loc.line);
       const fileName = path.relative(
         vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '',
         loc.file
       );
-      previews.push(`**${fileName}**\n\`\`\`css\n${snippet}\n\`\`\``);
+      previews.push(`**${fileName}**\n\`\`\`css\n${body}\n\`\`\``);
     }
 
     if (previews.length === 0) return undefined;
 
     const md = new vscode.MarkdownString(previews.join('\n\n---\n\n'));
-    // Return hover with explicit range so it anchors to the mixin name token
+    md.isTrusted = true;
     return new vscode.Hover(md, hit.range);
   }
 }
@@ -225,8 +274,6 @@ class MixinHoverProvider implements vscode.HoverProvider {
 // ---------------------------------------------------------------------------
 
 export function activate(context: vscode.ExtensionContext): void {
-  // Register for any language that might be used with CSS/PostCSS files.
-  // The file-pattern entry is the catch-all for editors that use unusual language IDs.
   const selector: vscode.DocumentSelector = [
     { language: 'css' },
     { language: 'postcss' },
@@ -237,38 +284,26 @@ export function activate(context: vscode.ExtensionContext): void {
   ];
 
   context.subscriptions.push(
+    vscode.languages.registerDocumentSemanticTokensProvider(selector, new MixinSemanticTokensProvider(), LEGEND),
     vscode.languages.registerDefinitionProvider(selector, new MixinDefinitionProvider()),
     vscode.languages.registerReferenceProvider(selector, new MixinReferenceProvider()),
     vscode.languages.registerHoverProvider(selector, new MixinHoverProvider())
   );
 
-  // Eagerly kick off index build so first Cmd+Click isn't slow
+  // Eagerly build index
   getIndex();
 
-  // Keep index in sync with file changes
+  // Watch for file changes
   const watcher = vscode.workspace.createFileSystemWatcher(getGlob());
-  watcher.onDidChange((uri) => {
-    if (!cachedIndex) return;
-    removeFileFromIndex(cachedIndex, uri.fsPath);
-    addFileToIndex(cachedIndex, uri.fsPath);
-  });
-  watcher.onDidCreate((uri) => {
-    if (!cachedIndex) return;
-    addFileToIndex(cachedIndex, uri.fsPath);
-  });
-  watcher.onDidDelete((uri) => {
-    if (!cachedIndex) return;
-    removeFileFromIndex(cachedIndex, uri.fsPath);
-  });
+  watcher.onDidChange((uri) => { if (!cachedIndex) return; removeFileFromIndex(cachedIndex, uri.fsPath); addFileToIndex(cachedIndex, uri.fsPath); });
+  watcher.onDidCreate((uri) => { if (!cachedIndex) return; addFileToIndex(cachedIndex, uri.fsPath); });
+  watcher.onDidDelete((uri) => { if (!cachedIndex) return; removeFileFromIndex(cachedIndex, uri.fsPath); });
   context.subscriptions.push(watcher);
 
-  // Manual rebuild command
   context.subscriptions.push(
     vscode.commands.registerCommand('postcssMixinNav.rebuildIndex', () => {
       cachedIndex = undefined;
-      getIndex().then(() =>
-        vscode.window.showInformationMessage('PostCSS Mixin Navigator: index rebuilt.')
-      );
+      getIndex().then(() => vscode.window.showInformationMessage('PostCSS Mixin Navigator: index rebuilt.'));
     })
   );
 }
