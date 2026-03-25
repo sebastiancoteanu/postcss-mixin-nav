@@ -2,7 +2,7 @@
   "name": "postcss-mixin-nav",
   "displayName": "PostCSS Mixin Navigator",
   "description": "Go-to-definition for postcss-mixins (@define-mixin / @mixin)",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "SebastianCoteanu",
   "license": "MIT",
   "icon": "images/logo.png",
