@@ -3,7 +3,12 @@
   "displayName": "PostCSS Mixin Navigator",
   "description": "Go-to-definition for postcss-mixins (@define-mixin / @mixin)",
   "version": "0.1.0",
-  "publisher": "local",
+  "publisher": "SebastianCoteanu",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sebastiancoteanu/postcss-mixin-nav.git"
+  },
   "engines": { "vscode": "^1.80.0" },
   "categories": ["Other"],
   "activationEvents": [

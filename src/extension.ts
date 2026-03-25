@@ -244,8 +244,13 @@ class MixinHoverProvider implements vscode.HoverProvider {
     const locs = index.get(hit.name);
     if (!locs?.length) return undefined;
 
-    const previews: string[] = [];
-    for (const loc of locs) {
+    const md = new vscode.MarkdownString();
+    md.isTrusted = false;
+    md.supportHtml = false;
+
+    let anyBlock = false;
+    for (let i = 0; i < locs.length; i++) {
+      const loc = locs[i];
       let content: string;
       try {
         content = fs.readFileSync(loc.file, 'utf8');
@@ -258,13 +263,19 @@ class MixinHoverProvider implements vscode.HoverProvider {
         vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '',
         loc.file
       );
-      previews.push(`**${fileName}**\n\`\`\`css\n${body}\n\`\`\``);
+
+      if (i > 0 && anyBlock) {
+        md.appendMarkdown('\n\n---\n\n');
+      }
+      md.appendMarkdown('`');
+      md.appendText(fileName);
+      md.appendMarkdown('`\n\n');
+      md.appendCodeblock(body, 'css');
+      anyBlock = true;
     }
 
-    if (previews.length === 0) return undefined;
+    if (!anyBlock) return undefined;
 
-    const md = new vscode.MarkdownString(previews.join('\n\n---\n\n'));
-    md.isTrusted = true;
     return new vscode.Hover(md, hit.range);
   }
 }
